@@ -1,0 +1,106 @@
+---
+title: "Activity Type Prediction"
+author: "Conrad Yoder"
+date: February 11, 2018
+output: html_document
+---
+***
+<br>
+
+## Summary
+For this project we are asked to build a model to predict the manner in which users did a particular exericse, based on the supplied personal fitness device data supplied. I explain building the model and the choices made, how I used cross validation, and the expected out-of-sample error.
+
+***
+<br>
+
+## Loading, Exploratory Data Analysis
+Assume the data has already been downloaded from the website metioned in the assignment.
+```{r cache=TRUE}
+pmltrain <- read.csv("pml-training.csv")
+pmltest <- read.csv("pml-testing.csv")
+dim(pmltrain)
+dim(pmltest)
+```
+<br>
+We examine the data (not printed due to large amount of output):
+```{r results='hide'}
+str(pmltrain)
+str(pmltest)
+head(pmltrain)
+head(pmltest)
+```
+<br>
+We see the data is somewhat eveny distributed between the 5 `classe`s in the training data, except for classe **A** which has almost 50% as many instances as the others:
+```{r}
+plot(pmltrain$classe, main = "Quantity of training samples per classe",
+     xlab = "classe type", ylab = "Number of Training Samples", ylim = c(0, 6000))
+```
+<br>
+Digging into the data, we notice:
+
+- Along with **NA**s for missing data, there are blank values, and the string `#DIV/0!`
+- Quite a few columns (_e.g._ **kurtosis_yaw_belt**, **skewness_roll_belt**) contain little or no data
+- The first 7 columns appear to not contain relevant data for predicting outcome (_e.g._, column number, username, various timestamps)
+
+***
+<br>
+
+## Cleaning Data
+We reload the data and remove columns we don't want, as per the observations noted above:
+```{r cache=TRUE}
+pmltrain <- read.csv("pml-training.csv", na.strings = c("NA", "#DIV/0!", ""))
+pmltest <- read.csv("pml-testing.csv", na.strings = c("NA", "#DIV/0!", ""))
+pmltrain <- pmltrain[, -c(1:7)]
+pmltest <- pmltest[, -c(1:7)]
+pmltrain <- pmltrain[, colSums(is.na(pmltrain)) == 0]
+pmltest <- pmltest[, colSums(is.na(pmltest)) == 0]
+dim(pmltrain)
+dim(pmltest)
+```
+
+***
+<br>
+
+## Modeling/Predicting
+Following recommended guidelines from the class, we split the training data 60/40, into new training and test sets, respectively. Here we use **random subsampling without replacement** - this is a common approach to creating training and test sets. Also set a seed here for reproducability in this paper:
+
+```{r cache=TRUE}
+library(caret)
+set.seed(22)
+inTrain <- createDataPartition(pmltrain$classe, p = 0.6, list = FALSE)
+innerTrain <- pmltrain[inTrain, ]
+innerTest <- pmltrain[-inTrain, ]
+```
+<br>
+As mentioned by Professor Leek in the class, **Boosting** is one of the most accurate out-of-the-box classification models we can use, so we use **Boosting with Trees** in this case:
+```{r cache=TRUE}
+modFit <- train(classe ~ ., method = "gbm", data = innerTrain, verbose = FALSE)
+print(modFit)
+```
+<br>
+Now, use this fit model to cross-validate with our inner test set:
+```{r}
+library(caret)
+modPred <- predict(modFit, innerTest)
+confusionMatrix(modPred, innerTest$classe)
+```
+<br>
+We see from the following plot and chart that the `roll_belt` factor had the largest relative influence, followed by `pitch_forearm` and `yaw_belt`:
+```{r}
+tibble::as_tibble(summary(modFit))
+```
+
+***
+<br>
+
+## Expected Out of Sample Error
+In the above results, we get a very high accuracy of **96.11%**. The Out-of-Sample Error here is 1 minus the accuracy, so this give us an **Expected Out of Sample Error of 4.89%**. With our final test set of 20, we expect to see on average about 1 misclassification, which is very good. (`20 * 0.9611 = 19.222`)
+
+***
+<br>
+
+## Results with Final Test Set
+```{r}
+finalPrediction <- predict(modFit, pmltest)
+finalPrediction
+```
